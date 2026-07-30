@@ -1,0 +1,294 @@
+<Window x:Class="GitDailyReport.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Git 工作日报生成器"
+        Width="1280"
+        Height="860"
+        MinWidth="960"
+        MinHeight="700"
+        Icon="icon.ico"
+        Background="{StaticResource BgColor}"
+        WindowStartupLocation="CenterScreen">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="24,20">
+            <StackPanel>
+
+                <!-- ===== 标题 ===== -->
+                <TextBlock Text="📋 Git 工作日报生成器"
+                           FontSize="24" FontWeight="Bold"
+                           Foreground="{StaticResource TextPrimaryColor}" Margin="0,0,0,4"/>
+                <TextBlock Text="自动获取 Git 提交日志，使用 Deepseek AI 生成通俗易懂的工作日报"
+                           FontSize="13" Foreground="{StaticResource TextSecondaryColor}" Margin="0,0,0,20"/>
+
+                <!-- ===== 设置卡片 ===== -->
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="⚙️ 设置" Style="{StaticResource SectionHeader}"/>
+
+                        <!-- API Key -->
+                        <TextBlock Text="Deepseek API Key" Style="{StaticResource LabelText}" Margin="0,0,0,4"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <PasswordBox x:Name="ApiKeyPasswordBox"
+                                         PasswordChanged="ApiKeyPasswordBox_OnPasswordChanged" Grid.Column="0"/>
+                            <TextBox Text="{Binding ApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                     Grid.Column="0" Panel.ZIndex="1"
+                                     Visibility="{Binding IsApiKeyVisible, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                            <Button Grid.Column="1"
+                                    Content="{Binding IsApiKeyVisible, Converter={StaticResource BoolToToggleTextConverter}}"
+                                    Command="{Binding ToggleApiKeyVisibilityCommand}"
+                                    Style="{StaticResource SecondaryButton}" Width="72" Margin="8,0,0,0"/>
+                            <Button Grid.Column="2" Content="🔑 获取密钥"
+                                    Style="{StaticResource SecondaryButton}" Margin="8,0,0,0"
+                                    Click="OpenApiKeyUrl_Click"/>
+                        </Grid>
+
+                        <!-- 仓库路径 -->
+                        <TextBlock Text="Git 仓库路径" Style="{StaticResource LabelText}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0"
+                                     Text="{Binding NewRepoPath, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="输入 Git 仓库的本地路径（包含 .git 目录的文件夹）"/>
+                            <Button Grid.Column="1" Content="➕ 添加仓库"
+                                    Style="{StaticResource PrimaryButton}"
+                                    Command="{Binding AddRepoCommand}"
+                                    MinWidth="100" Padding="16,10"
+                                    Margin="8,0,0,0"/>
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding RepoPaths}" Margin="0,8,0,4">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{StaticResource BgColor}"
+                                            CornerRadius="6" Padding="10,6" Margin="0,0,0,4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                                <TextBlock Text="📁" FontSize="13"
+                                                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <TextBlock Text="{Binding}" FontSize="12"
+                                                           Foreground="{StaticResource TextPrimaryColor}"
+                                                           VerticalAlignment="Center" ToolTip="{Binding}"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="✕ 删除"
+                                                    Style="{StaticResource DangerButton}"
+                                                    Command="{Binding DataContext.RemoveRepoCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- 没有仓库时的提示 -->
+                        <TextBlock Text="还没有添加仓库，请在上面输入路径并点击添加"
+                                   FontSize="12" Foreground="{StaticResource TextSecondaryColor}" Margin="0,4,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding RepoPaths.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding RepoPaths.Count}" Value="1">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <!-- 日期：自动使用当天 -->
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <TextBlock FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryColor}"
+                                       VerticalAlignment="Center">
+                                <Run Text="📅 查询日期："/>
+                                <Run Text="{Binding TodayDateDisplay, Mode=OneWay}" FontWeight="SemiBold"/>
+                                <Run Text="（自动获取当天）"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== 提交者筛选卡片 ===== -->
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16"
+                        Visibility="{Binding EnableAuthorFilter, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="👤 提交者筛选" Style="{StaticResource SectionHeader}"
+                                       VerticalAlignment="Center" Margin="0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Content="应用筛选" Style="{StaticResource SecondaryButton}"
+                                        Command="{Binding ApplyAuthorFilterCommand}" Margin="0,0,8,0"/>
+                                <CheckBox Content="全选" IsChecked="{Binding SelectAllAuthors}"
+                                          VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="选择要包含在日报中的提交者：" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryColor}" Margin="0,0,0,8"/>
+
+                        <ItemsControl ItemsSource="{Binding Authors}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Content="{Binding DisplayText}"
+                                              IsChecked="{Binding IsSelected}"
+                                              FontSize="12" Margin="0,2,20,2"
+                                              Foreground="{StaticResource TextPrimaryColor}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Git 日志卡片 ===== -->
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="📜 Git 提交日志" Style="{StaticResource SectionHeader}"
+                                       VerticalAlignment="Center" Margin="0"/>
+                            <Button Grid.Column="1" Content="🔄 获取日志"
+                                    Style="{StaticResource PrimaryButton}"
+                                    Command="{Binding FetchLogsCommand}"/>
+                        </Grid>
+
+                        <TextBox Text="{Binding GitLogs, Mode=OneWay}"
+                                 IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                 MinHeight="150" MaxHeight="280"
+                                 VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas, Microsoft YaHei UI" FontSize="12"
+                                 Background="{StaticResource BgColor}"
+                                 BorderBrush="{StaticResource BorderColor}"
+                                 Padding="12,10"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== Prompt 编辑器卡片 ===== -->
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource SectionHeader}" VerticalAlignment="Center" Margin="0">
+                                <Run Text="✏️ Prompt 模板"/>
+                                <Run Text="（{GIT_LOGS} 作为占位符）" FontSize="11"
+                                     Foreground="{StaticResource TextSecondaryColor}"/>
+                            </TextBlock>
+                            <Button Grid.Column="1" Content="🔄 恢复默认"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding ResetPromptCommand}"/>
+                        </Grid>
+
+                        <TextBox Text="{Binding PromptTemplate, UpdateSourceTrigger=PropertyChanged}"
+                                 TextWrapping="Wrap" AcceptsReturn="True"
+                                 MinHeight="100" MaxHeight="200"
+                                 VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas, Microsoft YaHei UI" FontSize="12"
+                                 Background="{StaticResource BgColor}"
+                                 BorderBrush="{StaticResource BorderColor}"
+                                 Padding="12,10"
+                                 ToolTip="编辑 Prompt 模板，{GIT_LOGS} 将被替换为实际的 Git 提交日志"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== AI 报告卡片 ===== -->
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="🤖 AI 生成的工作日报" Style="{StaticResource SectionHeader}"
+                                       VerticalAlignment="Center" Margin="0"/>
+                            <Button Grid.Column="1" Content="📋 复制报告"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding CopyReportCommand}" Margin="0,0,8,0"/>
+                            <Button Grid.Column="2" Content="✨ 生成日报"
+                                    Style="{StaticResource PrimaryButton}"
+                                    Command="{Binding GenerateReportCommand}"/>
+                        </Grid>
+
+                        <TextBox Text="{Binding Report, Mode=OneWay}"
+                                 IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                                 MinHeight="200" MaxHeight="400"
+                                 VerticalScrollBarVisibility="Auto"
+                                 FontFamily="Microsoft YaHei UI" FontSize="13"
+                                 Background="{StaticResource BgColor}"
+                                 BorderBrush="{StaticResource BorderColor}"
+                                 Padding="12,10"/>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ===== 状态栏 ===== -->
+        <Border Grid.Row="1" Background="{StaticResource CardColor}"
+                BorderBrush="{StaticResource BorderColor}" BorderThickness="0,1,0,0"
+                Padding="24,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding StatusMessage}" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryColor}" VerticalAlignment="Center"/>
+                <ProgressBar Grid.Column="1" IsIndeterminate="{Binding IsLoading}"
+                             Height="6" Width="120" Margin="16,0"
+                             Foreground="{StaticResource PrimaryColor}"
+                             Background="{StaticResource BgColor}" BorderThickness="0">
+                    <ProgressBar.Style>
+                        <Style TargetType="ProgressBar">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsLoading}" Value="False">
+                                    <Setter Property="Visibility" Value="Hidden"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ProgressBar.Style>
+                </ProgressBar>
+                <TextBlock Grid.Column="2" Text="Powered by Deepseek V4 Pro"
+                           FontSize="11" Foreground="{StaticResource TextSecondaryColor}"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

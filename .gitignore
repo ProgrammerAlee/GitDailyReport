@@ -1,0 +1,16 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.vs/
+.vscode/
+*.DotSettings.user
+
+# Publish output
+publish/
+publish-self-contained/
+
+# OS
+.DS_Store
+Thumbs.db
