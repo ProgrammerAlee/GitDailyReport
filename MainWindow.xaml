@@ -102,52 +102,75 @@
                                    FontSize="12" Foreground="{StaticResource TextSecondaryColor}" Margin="0,4,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding RepoPaths.Count}" Value="0">
                                             <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding RepoPaths.Count}" Value="1">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
 
-                        <!-- 日期：自动使用当天 -->
-                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                            <TextBlock FontSize="12"
+                        <!-- 查询日期 -->
+                        <TextBlock Text="查询日期" Style="{StaticResource LabelText}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="从" FontSize="13"
                                        Foreground="{StaticResource TextSecondaryColor}"
-                                       VerticalAlignment="Center">
-                                <Run Text="📅 查询日期："/>
-                                <Run Text="{Binding TodayDateDisplay, Mode=OneWay}" FontWeight="SemiBold"/>
-                                <Run Text="（自动获取当天）"/>
-                            </TextBlock>
-                        </StackPanel>
+                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <DatePicker Grid.Column="1"
+                                        SelectedDate="{Binding StartDate, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedDateFormat="Short"
+                                        ToolTip="开始日期"/>
+                            <TextBlock Grid.Column="2" Text="到" FontSize="13"
+                                       Foreground="{StaticResource TextSecondaryColor}"
+                                       VerticalAlignment="Center" Margin="10,0,8,0"/>
+                            <DatePicker Grid.Column="3"
+                                        SelectedDate="{Binding EndDate, UpdateSourceTrigger=PropertyChanged}"
+                                        SelectedDateFormat="Short"
+                                        ToolTip="结束日期（可与开始日期相同，表示只查一天）"/>
+                            <Button Grid.Column="4" Content="今天"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding SetTodayCommand}"
+                                    Margin="8,0,0,0" Padding="12,8" MinHeight="36"/>
+                            <Button Grid.Column="5" Content="近7天"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding SetLast7DaysCommand}"
+                                    Margin="8,0,0,0" Padding="12,8" MinHeight="36"/>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
                 <!-- ===== 提交者筛选卡片 ===== -->
-                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16"
-                        Visibility="{Binding EnableAuthorFilter, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                     <StackPanel>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="👤 提交者筛选" Style="{StaticResource SectionHeader}"
+                            <TextBlock Text="👤 提交人筛选" Style="{StaticResource SectionHeader}"
                                        VerticalAlignment="Center" Margin="0"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button Content="应用筛选" Style="{StaticResource SecondaryButton}"
-                                        Command="{Binding ApplyAuthorFilterCommand}" Margin="0,0,8,0"/>
-                                <CheckBox Content="全选" IsChecked="{Binding SelectAllAuthors}"
-                                          VerticalAlignment="Center"/>
-                            </StackPanel>
+                            <CheckBox Grid.Column="1" Content="全选"
+                                      IsChecked="{Binding SelectAllAuthors}"
+                                      VerticalAlignment="Center"
+                                      Visibility="{Binding HasAuthors, Converter={StaticResource BoolToVisibilityConverter}}"/>
                         </Grid>
 
-                        <TextBlock Text="选择要包含在日报中的提交者：" FontSize="12"
+                        <TextBlock Text="获取日志后可勾选要包含的提交人，勾选会立即生效。" FontSize="12"
                                    Foreground="{StaticResource TextSecondaryColor}" Margin="0,0,0,8"/>
+
+                        <TextBlock Text="还没有提交人，请先选择日期并点击「获取日志」。"
+                                   FontSize="12" Foreground="{StaticResource TextSecondaryColor}"
+                                   Visibility="{Binding HasAuthors, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"/>
 
                         <ItemsControl ItemsSource="{Binding Authors}">
                             <ItemsControl.ItemsPanel>

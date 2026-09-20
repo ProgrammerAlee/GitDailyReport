@@ -8,14 +8,14 @@ namespace GitDailyReport.Services;
 public interface IGitService
 {
     /// <summary>
-    /// 获取某个仓库在指定日期的提交日志（含详细信息和变更文件列表）
+    /// 获取某个仓库在指定日期范围内的提交日志（含详细信息和变更文件列表）
     /// </summary>
-    Task<List<GitCommit>> GetCommitsAsync(string repoPath, DateTime date);
+    Task<List<GitCommit>> GetCommitsAsync(string repoPath, DateTime startDate, DateTime endDate);
 
     /// <summary>
-    /// 获取仓库在指定日期的所有提交者列表
+    /// 获取仓库在指定日期范围内的所有提交者列表
     /// </summary>
-    Task<List<string>> GetAuthorsAsync(string repoPath, DateTime date);
+    Task<List<string>> GetAuthorsAsync(string repoPath, DateTime startDate, DateTime endDate);
 
     /// <summary>
     /// 将提交列表格式化为纯文本（供 AI prompt 使用）

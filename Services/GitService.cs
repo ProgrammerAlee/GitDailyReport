@@ -11,14 +11,12 @@ namespace GitDailyReport.Services;
 public class GitService : IGitService
 {
     /// <inheritdoc />
-    public async Task<List<GitCommit>> GetCommitsAsync(string repoPath, DateTime date)
+    public async Task<List<GitCommit>> GetCommitsAsync(string repoPath, DateTime startDate, DateTime endDate)
     {
         var commits = new List<GitCommit>();
         var repoName = Path.GetFileName(repoPath);
 
-        var dateStr = date.ToString("yyyy-MM-dd");
-        // 获取详细提交记录：完整消息 + 变更文件列表
-        var arguments = $"log --since=\"{dateStr} 00:00:00\" --until=\"{dateStr} 23:59:59\" " +
+        var arguments = $"log {BuildDateRangeArgs(startDate, endDate)} " +
                         $"--pretty=format:\"===COMMIT_START===%n%h||%an||%ae||%ad||%s%n%b\" " +
                         $"--name-only --date=format:\"%Y-%m-%d %H:%M:%S\"";
 
@@ -61,7 +59,7 @@ public class GitService : IGitService
 
             if (!string.IsNullOrWhiteSpace(output))
             {
-                commits = ParseGitLog(output, repoName, date);
+                commits = ParseGitLog(output, repoName);
             }
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
@@ -76,11 +74,10 @@ public class GitService : IGitService
     /// <summary>
     /// 获取仓库中所有提交者列表
     /// </summary>
-    public async Task<List<string>> GetAuthorsAsync(string repoPath, DateTime date)
+    public async Task<List<string>> GetAuthorsAsync(string repoPath, DateTime startDate, DateTime endDate)
     {
         var authors = new HashSet<string>();
-        var dateStr = date.ToString("yyyy-MM-dd");
-        var arguments = $"log --since=\"{dateStr} 00:00:00\" --until=\"{dateStr} 23:59:59\" " +
+        var arguments = $"log {BuildDateRangeArgs(startDate, endDate)} " +
                         $"--pretty=format:\"%an||%ae\"";
 
         try
@@ -127,6 +124,13 @@ public class GitService : IGitService
         return [.. authors.OrderBy(a => a)];
     }
 
+    private static string BuildDateRangeArgs(DateTime startDate, DateTime endDate)
+    {
+        var since = startDate.Date.ToString("yyyy-MM-dd") + " 00:00:00";
+        var until = endDate.Date.AddDays(1).ToString("yyyy-MM-dd") + " 00:00:00";
+        return $"--since=\"{since}\" --until=\"{until}\"";
+    }
+
     /// <summary>
     /// 解析 git log 输出
     /// 格式：
@@ -140,7 +144,7 @@ public class GitService : IGitService
     /// ===COMMIT_START===
     /// ...
     /// </summary>
-    private static List<GitCommit> ParseGitLog(string output, string repoName, DateTime date)
+    private static List<GitCommit> ParseGitLog(string output, string repoName)
     {
         var commits = new List<GitCommit>();
         var lines = output.Split('\n');
@@ -227,7 +231,7 @@ public class GitService : IGitService
     public string FormatCommitsForPrompt(List<GitCommit> commits)
     {
         if (commits.Count == 0)
-            return "（今日无提交记录）";
+            return "（该时间范围内无提交记录）";
 
         var grouped = commits.GroupBy(c => c.RepoName);
         var lines = new List<string>();

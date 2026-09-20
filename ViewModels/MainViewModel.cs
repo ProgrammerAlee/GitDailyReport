@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -18,9 +19,10 @@ public partial class MainViewModel : ObservableObject
     private AppSettings _settings;
     private List<GitCommit> _allCommits = [];
     private bool _isInitialized;
+    private bool _suppressSelectAllSync;
 
     // 默认 Prompt —— 严格要求纯编号输出，无 markdown，无多余废话
-    private const string DefaultPrompt = @"你是一个工作日报撰写助手。请根据下面的 Git 提交日志，生成一份今日工作日报。
+    private const string DefaultPrompt = @"你是一个工作日报撰写助手。请根据下面的 Git 提交日志，生成一份工作汇报。
 
 严格按以下要求输出：
 - 只用 1. 2. 3. 4. 的编号格式，每条一行
@@ -58,10 +60,24 @@ Git 提交日志：
             ? DefaultPrompt
             : _settings.CustomPrompt;
 
+        _startDate = ParseSavedDate(_settings.LastStartDate, _settings.LastSelectedDate);
+        _endDate = ParseSavedDate(_settings.LastEndDate, _startDate.ToString("yyyy-MM-dd"));
+        if (_endDate < _startDate)
+            _endDate = _startDate;
+
         RepoPaths.CollectionChanged += OnRepoPathsChanged;
         Authors.CollectionChanged += OnAuthorsChanged;
 
         _isInitialized = true;
+    }
+
+    private static DateTime ParseSavedDate(string? value, string fallback)
+    {
+        if (DateTime.TryParse(value, out var parsed))
+            return parsed.Date;
+        if (DateTime.TryParse(fallback, out var fallbackDate))
+            return fallbackDate.Date;
+        return DateTime.Today;
     }
 
     // ==================== 属性 ====================
@@ -74,8 +90,42 @@ Git 提交日志：
         if (_isInitialized) SaveSettings();
     }
 
-    /// <summary>今天的日期（只读显示）</summary>
-    public string TodayDateDisplay => DateTime.Today.ToString("yyyy年MM月dd日");
+    [ObservableProperty]
+    private DateTime _startDate = DateTime.Today;
+
+    [ObservableProperty]
+    private DateTime _endDate = DateTime.Today;
+
+    public string DateRangeDisplay =>
+        StartDate.Date == EndDate.Date
+            ? StartDate.ToString("yyyy年MM月dd日")
+            : $"{StartDate:yyyy年MM月dd日} 至 {EndDate:yyyy年MM月dd日}";
+
+    partial void OnStartDateChanged(DateTime value)
+    {
+        if (value == default)
+        {
+            StartDate = DateTime.Today;
+            return;
+        }
+        if (value > EndDate)
+            EndDate = value;
+        OnPropertyChanged(nameof(DateRangeDisplay));
+        if (_isInitialized) SaveSettings();
+    }
+
+    partial void OnEndDateChanged(DateTime value)
+    {
+        if (value == default)
+        {
+            EndDate = StartDate;
+            return;
+        }
+        if (value < StartDate)
+            StartDate = value;
+        OnPropertyChanged(nameof(DateRangeDisplay));
+        if (_isInitialized) SaveSettings();
+    }
 
     public ObservableCollection<string> RepoPaths { get; } = [];
 
@@ -113,6 +163,9 @@ Git 提交日志：
     private bool _enableAuthorFilter;
 
     [ObservableProperty]
+    private bool _hasAuthors;
+
+    [ObservableProperty]
     private bool _selectAllAuthors = true;
 
     // ==================== 命令 ====================
@@ -133,7 +186,11 @@ Git 提交日志：
             GitLogs = string.Empty;
             Report = string.Empty;
 
-            var today = DateTime.Today;
+            var start = StartDate.Date;
+            var end = EndDate.Date;
+            if (end < start)
+                (start, end) = (end, start);
+
             _allCommits = [];
             var failedRepos = new List<string>();
             var allAuthors = new HashSet<(string Name, string Email)>();
@@ -142,7 +199,7 @@ Git 提交日志：
             {
                 try
                 {
-                    var commits = await _gitService.GetCommitsAsync(repoPath, today);
+                    var commits = await _gitService.GetCommitsAsync(repoPath, start, end);
                     _allCommits.AddRange(commits);
                     foreach (var c in commits)
                         allAuthors.Add((c.Author, c.AuthorEmail));
@@ -157,23 +214,22 @@ Git 提交日志：
             var savedEmails = _settings.SelectedAuthorEmails.ToHashSet();
             var hasSavedSelection = savedEmails.Count > 0;
 
+            _suppressSelectAllSync = true;
             Authors.Clear();
             foreach (var (name, email) in allAuthors.OrderBy(a => a.Name))
             {
-                var isSelected = hasSavedSelection ? savedEmails.Contains(email) : true;
+                var isSelected = !hasSavedSelection || savedEmails.Contains(email);
                 Authors.Add(new AuthorItem { Name = name, Email = email, IsSelected = isSelected });
             }
 
-            EnableAuthorFilter = Authors.Count > 1;
-            SelectAllAuthors = Authors.All(a => a.IsSelected);
+            EnableAuthorFilter = Authors.Count > 0;
+            HasAuthors = Authors.Count > 0;
+            SelectAllAuthors = Authors.Count > 0 && Authors.All(a => a.IsSelected);
+            _suppressSelectAllSync = false;
 
             foreach (var author in Authors)
             {
-                author.PropertyChanged += (_, _) =>
-                {
-                    SelectAllAuthors = Authors.All(a => a.IsSelected);
-                    SaveAuthorSelection();
-                };
+                author.PropertyChanged += OnAuthorItemPropertyChanged;
             }
 
             RefreshLogsDisplay(failedRepos);
@@ -205,14 +261,20 @@ Git 提交日志：
             return;
         }
 
+        var filteredCommits = GetFilteredCommits();
+        if (filteredCommits.Count == 0)
+        {
+            MessageBox.Show("没有可生成日报的提交记录，请检查日期范围或提交人筛选。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
         try
         {
             IsLoading = true;
             StatusMessage = "正在调用 Deepseek API 生成日报...";
             Report = string.Empty;
 
-            var filteredCommits = GetFilteredCommits();
-            var logsText = _gitService.FormatCommitsForPrompt(filteredCommits);
+            var logsText = $"统计周期: {DateRangeDisplay}\n\n" + _gitService.FormatCommitsForPrompt(filteredCommits);
             var prompt = PromptTemplate.Replace("{GIT_LOGS}", logsText);
 
             var report = await _deepseekService.GenerateDailyReportWithPromptAsync(prompt, ApiKey);
@@ -300,10 +362,29 @@ Git 提交日志：
         }
     }
 
+    [RelayCommand]
+    private void SetToday()
+    {
+        StartDate = DateTime.Today;
+        EndDate = DateTime.Today;
+        StatusMessage = "已切换为今天";
+    }
+
+    [RelayCommand]
+    private void SetLast7Days()
+    {
+        EndDate = DateTime.Today;
+        StartDate = DateTime.Today.AddDays(-6);
+        StatusMessage = "已切换为近 7 天";
+    }
+
     partial void OnSelectAllAuthorsChanged(bool value)
     {
+        if (_suppressSelectAllSync) return;
+        _suppressSelectAllSync = true;
         foreach (var author in Authors)
             author.IsSelected = value;
+        _suppressSelectAllSync = false;
         RefreshLogsDisplay();
         SaveAuthorSelection();
     }
@@ -314,21 +395,37 @@ Git 提交日志：
         RefreshLogsDisplay();
     }
 
+    private void OnAuthorItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(AuthorItem.IsSelected) || _suppressSelectAllSync)
+            return;
+
+        _suppressSelectAllSync = true;
+        SelectAllAuthors = Authors.Count > 0 && Authors.All(a => a.IsSelected);
+        _suppressSelectAllSync = false;
+        RefreshLogsDisplay();
+        SaveAuthorSelection();
+    }
+
     // ==================== 私有方法 ====================
 
     private List<GitCommit> GetFilteredCommits()
     {
         if (!EnableAuthorFilter || Authors.Count == 0) return _allCommits;
-        var selectedAuthors = Authors.Where(a => a.IsSelected).Select(a => a.Name).ToHashSet();
-        return _allCommits.Where(c => selectedAuthors.Contains(c.Author)).ToList();
+        var selected = Authors.Where(a => a.IsSelected)
+            .Select(a => (a.Name, a.Email))
+            .ToHashSet();
+        return _allCommits.Where(c => selected.Contains((c.Author, c.AuthorEmail))).ToList();
     }
 
     private void RefreshLogsDisplay(List<string>? failedRepos = null)
     {
         var filtered = GetFilteredCommits();
+        var selectedAuthorCount = Authors.Count(a => a.IsSelected);
         var logText = new List<string>
         {
-            $"📅 日期: {DateTime.Today:yyyy-MM-dd}",
+            $"📅 日期: {DateRangeDisplay}",
+            $"👤 提交人: {selectedAuthorCount}/{Authors.Count} 人",
             $"📊 筛选后: {filtered.Count} 条提交  /  总计: {_allCommits.Count} 条",
             ""
         };
@@ -360,7 +457,11 @@ Git 提交日志：
     }
 
     private void OnRepoPathsChanged(object? sender, NotifyCollectionChangedEventArgs e) => SaveSettings();
-    private void OnAuthorsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RefreshLogsDisplay();
+    private void OnAuthorsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_suppressSelectAllSync) return;
+        RefreshLogsDisplay();
+    }
 
     private void SaveSettings()
     {
@@ -370,6 +471,9 @@ Git 提交日志：
             _settings.RepoPaths = [.. RepoPaths];
             _settings.EncryptedApiKey = _settingsService.EncryptApiKey(ApiKey);
             _settings.CustomPrompt = PromptTemplate != DefaultPrompt ? PromptTemplate : string.Empty;
+            _settings.LastStartDate = StartDate.ToString("yyyy-MM-dd");
+            _settings.LastEndDate = EndDate.ToString("yyyy-MM-dd");
+            _settings.LastSelectedDate = StartDate.ToString("yyyy-MM-dd");
             _settings.SelectedAuthorEmails = Authors.Where(a => a.IsSelected).Select(a => a.Email).ToList();
             _settingsService.SaveSettings(_settings);
         }

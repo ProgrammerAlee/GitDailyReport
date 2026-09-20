@@ -145,6 +145,11 @@
         <!-- DatePicker 样式 -->
         <Style TargetType="DatePicker">
             <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+            <Setter Property="Background" Value="{StaticResource CardColor}"/>
+            <Setter Property="SelectedDateFormat" Value="Short"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
 
         <!-- 卡片边框样式 -->

@@ -11,7 +11,13 @@ public class AppSettings
     /// <summary>Git 仓库路径列表</summary>
     public List<string> RepoPaths { get; set; } = [];
 
-    /// <summary>上次选择的日期</summary>
+    /// <summary>上次选择的开始日期</summary>
+    public string LastStartDate { get; set; } = DateTime.Today.ToString("yyyy-MM-dd");
+
+    /// <summary>上次选择的结束日期</summary>
+    public string LastEndDate { get; set; } = DateTime.Today.ToString("yyyy-MM-dd");
+
+    /// <summary>上次选择的日期（兼容旧配置）</summary>
     public string LastSelectedDate { get; set; } = DateTime.Today.ToString("yyyy-MM-dd");
 
     /// <summary>用户自定义的 Prompt 模板（为空则用默认）</summary>
