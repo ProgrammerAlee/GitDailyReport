@@ -59,11 +59,16 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0"
                                      Text="{Binding NewRepoPath, UpdateSourceTrigger=PropertyChanged}"
-                                     ToolTip="输入 Git 仓库的本地路径（包含 .git 目录的文件夹）"/>
-                            <Button Grid.Column="1" Content="➕ 添加仓库"
+                                     ToolTip="输入或浏览选择 Git 仓库的本地路径（包含 .git 的文件夹）"/>
+                            <Button Grid.Column="1" Content="📂 浏览"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding BrowseRepoCommand}"
+                                    MinWidth="88" Margin="8,0,0,0"/>
+                            <Button Grid.Column="2" Content="➕ 添加仓库"
                                     Style="{StaticResource PrimaryButton}"
                                     Command="{Binding AddRepoCommand}"
                                     MinWidth="100" Padding="16,10"
@@ -98,7 +103,7 @@
                         </ItemsControl>
 
                         <!-- 没有仓库时的提示 -->
-                        <TextBlock Text="还没有添加仓库，请在上面输入路径并点击添加"
+                        <TextBlock Text="还没有添加仓库，请点击「浏览」选择文件夹，或手动输入路径后添加"
                                    FontSize="12" Foreground="{StaticResource TextSecondaryColor}" Margin="0,4,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
@@ -146,6 +151,19 @@
                                     Command="{Binding SetLast7DaysCommand}"
                                     Margin="8,0,0,0" Padding="12,8" MinHeight="36"/>
                         </Grid>
+
+                        <!-- 查询选项 -->
+                        <WrapPanel Margin="0,12,0,0">
+                            <CheckBox Content="所有分支"
+                                      IsChecked="{Binding IncludeAllBranches}"
+                                      ToolTip="勾选后查询仓库中的所有分支，而不仅是当前检出分支"/>
+                            <CheckBox Content="排除 Merge"
+                                      IsChecked="{Binding ExcludeMerges}"
+                                      ToolTip="勾选后不统计 merge 提交，日报更干净"/>
+                            <CheckBox Content="按作者日期"
+                                      IsChecked="{Binding UseAuthorDate}"
+                                      ToolTip="按作者提交日期筛选，减少时区/提交者日期造成的漏记或多记"/>
+                        </WrapPanel>
                     </StackPanel>
                 </Border>
 
@@ -255,18 +273,21 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="🤖 AI 生成的工作日报" Style="{StaticResource SectionHeader}"
+                            <TextBlock Text="{Binding ReportHeaderText}" Style="{StaticResource SectionHeader}"
                                        VerticalAlignment="Center" Margin="0"/>
                             <Button Grid.Column="1" Content="📋 复制报告"
                                     Style="{StaticResource SecondaryButton}"
                                     Command="{Binding CopyReportCommand}" Margin="0,0,8,0"/>
-                            <Button Grid.Column="2" Content="✨ 生成日报"
+                            <Button Grid.Column="2" Content="{Binding GenerateButtonText}"
                                     Style="{StaticResource PrimaryButton}"
                                     Command="{Binding GenerateReportCommand}"/>
                         </Grid>
 
-                        <TextBox Text="{Binding Report, Mode=OneWay}"
-                                 IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                        <TextBlock Text="生成后可直接修改，再复制发给别人。" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryColor}" Margin="0,0,0,8"/>
+
+                        <TextBox Text="{Binding Report, UpdateSourceTrigger=PropertyChanged}"
+                                 TextWrapping="Wrap" AcceptsReturn="True"
                                  MinHeight="200" MaxHeight="400"
                                  VerticalScrollBarVisibility="Auto"
                                  FontFamily="Microsoft YaHei UI" FontSize="13"
@@ -291,23 +312,30 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding StatusMessage}" FontSize="12"
                            Foreground="{StaticResource TextSecondaryColor}" VerticalAlignment="Center"/>
-                <ProgressBar Grid.Column="1" IsIndeterminate="{Binding IsLoading}"
-                             Height="6" Width="120" Margin="16,0"
-                             Foreground="{StaticResource PrimaryColor}"
-                             Background="{StaticResource BgColor}" BorderThickness="0">
-                    <ProgressBar.Style>
-                        <Style TargetType="ProgressBar">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsLoading}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                                <DataTrigger Binding="{Binding IsLoading}" Value="False">
-                                    <Setter Property="Visibility" Value="Hidden"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </ProgressBar.Style>
-                </ProgressBar>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0" VerticalAlignment="Center">
+                    <ProgressBar IsIndeterminate="{Binding IsLoading}"
+                                 Height="6" Width="120" Margin="0,0,12,0"
+                                 Foreground="{StaticResource PrimaryColor}"
+                                 Background="{StaticResource BgColor}" BorderThickness="0">
+                        <ProgressBar.Style>
+                            <Style TargetType="ProgressBar">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsLoading}" Value="False">
+                                        <Setter Property="Visibility" Value="Hidden"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ProgressBar.Style>
+                    </ProgressBar>
+                    <Button Content="取消"
+                            Style="{StaticResource DangerButton}"
+                            Command="{Binding CancelWorkCommand}"
+                            Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}"
+                            Padding="10,4" MinHeight="28"/>
+                </StackPanel>
                 <TextBlock Grid.Column="2" Text="Powered by Deepseek V4 Pro"
                            FontSize="11" Foreground="{StaticResource TextSecondaryColor}"
                            VerticalAlignment="Center"/>

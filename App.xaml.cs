@@ -26,7 +26,7 @@ public partial class App : Application
         services.AddSingleton<IGitService, GitService>();
         services.AddSingleton(_ => new System.Net.Http.HttpClient
         {
-            Timeout = TimeSpan.FromMinutes(2)
+            Timeout = TimeSpan.FromMinutes(3)
         });
         services.AddSingleton<IDeepseekService, DeepseekService>();
 

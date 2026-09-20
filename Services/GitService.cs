@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using GitDailyReport.Models;
@@ -11,124 +12,160 @@ namespace GitDailyReport.Services;
 public class GitService : IGitService
 {
     /// <inheritdoc />
-    public async Task<List<GitCommit>> GetCommitsAsync(string repoPath, DateTime startDate, DateTime endDate)
+    public async Task<(bool Available, string Version)> GetGitVersionAsync(CancellationToken ct = default)
     {
-        var commits = new List<GitCommit>();
-        var repoName = Path.GetFileName(repoPath);
+        try
+        {
+            var (exitCode, output, error) = await RunGitAsync(
+                workingDirectory: AppContext.BaseDirectory,
+                arguments: "--version",
+                ct);
 
-        var arguments = $"log {BuildDateRangeArgs(startDate, endDate)} " +
+            if (exitCode == 0)
+            {
+                var version = (output + " " + error).Trim();
+                return (true, string.IsNullOrWhiteSpace(version) ? "Git 已安装" : version);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // git 不在 PATH 或无法启动
+        }
+
+        return (false, string.Empty);
+    }
+
+    /// <inheritdoc />
+    public async Task<List<GitCommit>> GetCommitsAsync(string repoPath, GitLogQuery query, CancellationToken ct = default)
+    {
+        var repoName = Path.GetFileName(repoPath);
+        var extraFlags = BuildFlags(query);
+        var arguments = $"log {extraFlags} {BuildDateRangeArgs(query)} " +
                         $"--pretty=format:\"===COMMIT_START===%n%h||%an||%ae||%ad||%s%n%b\" " +
                         $"--name-only --date=format:\"%Y-%m-%d %H:%M:%S\"";
 
         try
         {
-            using var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "git",
-                    Arguments = arguments,
-                    WorkingDirectory = repoPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    // 关键：强制使用 UTF-8 编码解决中文乱码
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8
-                }
-            };
+            var (exitCode, output, error) = await RunGitAsync(repoPath, arguments, ct);
 
-            // 设置环境变量确保 git 输出 UTF-8
-            process.StartInfo.Environment["LANG"] = "en_US.UTF-8";
-            process.StartInfo.Environment["LC_ALL"] = "en_US.UTF-8";
-
-            process.Start();
-
-            var outputTask = process.StandardOutput.ReadToEndAsync();
-            var errorTask = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync(CancellationToken.None);
-
-            var output = await outputTask;
-            var error = await errorTask;
-
-            if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(error))
+            if (exitCode != 0 && !string.IsNullOrWhiteSpace(error))
             {
                 throw new InvalidOperationException($"Git 命令执行失败 ({repoPath}): {error.Trim()}");
             }
 
-            if (!string.IsNullOrWhiteSpace(output))
-            {
-                commits = ParseGitLog(output, repoName);
-            }
+            if (string.IsNullOrWhiteSpace(output))
+                return [];
+
+            var commits = ParseGitLog(output, repoName);
+            if (query.UseAuthorDate)
+                commits = FilterByAuthorDate(commits, query.StartDate, query.EndDate);
+
+            return commits;
         }
-        catch (Exception ex) when (ex is not InvalidOperationException)
+        catch (Exception ex) when (ex is not InvalidOperationException and not OperationCanceledException)
         {
             throw new InvalidOperationException(
                 $"无法访问 Git 仓库 ({repoPath})。请确认路径有效且 Git 已安装。\n{ex.Message}");
         }
-
-        return commits;
     }
 
-    /// <summary>
-    /// 获取仓库中所有提交者列表
-    /// </summary>
-    public async Task<List<string>> GetAuthorsAsync(string repoPath, DateTime startDate, DateTime endDate)
+    private static string BuildFlags(GitLogQuery query)
     {
-        var authors = new HashSet<string>();
-        var arguments = $"log {BuildDateRangeArgs(startDate, endDate)} " +
-                        $"--pretty=format:\"%an||%ae\"";
-
-        try
-        {
-            using var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "git",
-                    Arguments = arguments,
-                    WorkingDirectory = repoPath,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8
-                }
-            };
-
-            process.Start();
-
-            var output = await process.StandardOutput.ReadToEndAsync();
-            var error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync(CancellationToken.None);
-
-            if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
-            {
-                foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-                {
-                    var parts = line.Split("||", 2);
-                    if (parts.Length >= 1 && !string.IsNullOrWhiteSpace(parts[0]))
-                    {
-                        authors.Add(parts[0].Trim());
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // 获取作者列表失败不阻塞主流程
-        }
-
-        return [.. authors.OrderBy(a => a)];
+        var flags = new List<string>();
+        if (query.IncludeAllBranches)
+            flags.Add("--all");
+        if (query.ExcludeMerges)
+            flags.Add("--no-merges");
+        return string.Join(" ", flags);
     }
 
-    private static string BuildDateRangeArgs(DateTime startDate, DateTime endDate)
+    private static string BuildDateRangeArgs(GitLogQuery query)
     {
-        var since = startDate.Date.ToString("yyyy-MM-dd") + " 00:00:00";
-        var until = endDate.Date.AddDays(1).ToString("yyyy-MM-dd") + " 00:00:00";
+        var start = query.StartDate.Date;
+        var end = query.EndDate.Date;
+        if (end < start)
+            (start, end) = (end, start);
+
+        // 按作者日期筛选时，先把提交者日期窗口放宽一天，再在本地按作者日期精确过滤，避免时区偏差漏记
+        if (query.UseAuthorDate)
+        {
+            start = start.AddDays(-1);
+            end = end.AddDays(1);
+        }
+
+        var since = start.ToString("yyyy-MM-dd") + " 00:00:00";
+        var until = end.AddDays(1).ToString("yyyy-MM-dd") + " 00:00:00";
         return $"--since=\"{since}\" --until=\"{until}\"";
+    }
+
+    private static List<GitCommit> FilterByAuthorDate(List<GitCommit> commits, DateTime startDate, DateTime endDate)
+    {
+        var start = startDate.Date;
+        var end = endDate.Date;
+        return commits.Where(c =>
+        {
+            if (!DateTime.TryParseExact(
+                    c.DateTimeStr,
+                    "yyyy-MM-dd HH:mm:ss",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var dt))
+            {
+                return true;
+            }
+
+            return dt.Date >= start && dt.Date <= end;
+        }).ToList();
+    }
+
+    private static async Task<(int ExitCode, string Output, string Error)> RunGitAsync(
+        string workingDirectory,
+        string arguments,
+        CancellationToken ct)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = arguments,
+                WorkingDirectory = workingDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            }
+        };
+
+        process.StartInfo.Environment["LANG"] = "en_US.UTF-8";
+        process.StartInfo.Environment["LC_ALL"] = "en_US.UTF-8";
+
+        process.Start();
+
+        await using var registration = ct.Register(() =>
+        {
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // 进程可能已经退出
+            }
+        });
+
+        var outputTask = process.StandardOutput.ReadToEndAsync(ct);
+        var errorTask = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct);
+
+        return (process.ExitCode, await outputTask, await errorTask);
     }
 
     /// <summary>
@@ -158,7 +195,6 @@ public class GitService : IGitService
 
             if (trimmed.StartsWith("===COMMIT_START==="))
             {
-                // 保存上一条记录
                 if (current != null)
                     commits.Add(current);
 
@@ -169,7 +205,6 @@ public class GitService : IGitService
 
             if (current == null)
             {
-                // 这是第一条记录行：hash||author||email||datetime||subject
                 var parts = trimmed.Split("||", 5);
                 if (parts.Length >= 5)
                 {
@@ -182,20 +217,18 @@ public class GitService : IGitService
                         Subject = parts[4].Trim(),
                         RepoName = repoName
                     };
-                    inBody = true; // 接下来是 body
+                    inBody = true;
                 }
                 continue;
             }
 
             if (inBody)
             {
-                // body 结束标志：空行或文件列表开始
                 if (string.IsNullOrWhiteSpace(trimmed))
                 {
                     inBody = false;
                     continue;
                 }
-                // 如果这一行看起来像文件路径（包含 / 或 .后缀），则是变更文件
                 if (trimmed.Contains('/') || trimmed.Contains('\\') || trimmed.Contains('.'))
                 {
                     inBody = false;
@@ -203,24 +236,17 @@ public class GitService : IGitService
                 }
                 else
                 {
-                    // 仍是 body 内容
                     if (!string.IsNullOrWhiteSpace(current.Body))
                         current.Body += "\n";
                     current.Body += trimmed;
                 }
                 continue;
             }
-            else
-            {
-                // 文件列表
-                if (!string.IsNullOrWhiteSpace(trimmed))
-                {
-                    current.ChangedFiles.Add(trimmed);
-                }
-            }
+
+            if (!string.IsNullOrWhiteSpace(trimmed))
+                current.ChangedFiles.Add(trimmed);
         }
 
-        // 保存最后一条记录
         if (current != null)
             commits.Add(current);
 

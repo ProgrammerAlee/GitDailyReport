@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using GitDailyReport.Models;
 using GitDailyReport.Services;
+using Microsoft.Win32;
 
 namespace GitDailyReport.ViewModels;
 
@@ -20,9 +21,12 @@ public partial class MainViewModel : ObservableObject
     private List<GitCommit> _allCommits = [];
     private bool _isInitialized;
     private bool _suppressSelectAllSync;
+    private bool _hasFetched;
+    private int _workGeneration;
+    private CancellationTokenSource? _workCts;
+    private CancellationTokenSource? _autoFetchCts;
 
-    // 默认 Prompt —— 严格要求纯编号输出，无 markdown，无多余废话
-    private const string DefaultPrompt = @"你是一个工作日报撰写助手。请根据下面的 Git 提交日志，生成一份工作汇报。
+    private const string DailyPrompt = @"你是一个工作日报撰写助手。请根据下面的 Git 提交日志，生成一份今日工作日报。
 
 严格按以下要求输出：
 - 只用 1. 2. 3. 4. 的编号格式，每条一行
@@ -34,6 +38,38 @@ public partial class MainViewModel : ObservableObject
 
 Git 提交日志：
 {GIT_LOGS}";
+
+    private const string RangePrompt = @"你是一个工作汇报撰写助手。请根据下面整个统计周期内的 Git 提交日志，生成一份阶段工作汇报。
+
+严格按以下要求输出：
+- 只用 1. 2. 3. 4. 的编号格式，每条一行
+- 按工作主题归类，覆盖整个周期，而不是按天罗列
+- 每一条用通俗易懂的中文描述做了什么、有什么进展和价值
+- 将相似的工作合并归类到同一条
+- 不要输出任何标题、开头语、结束语
+- 不要使用 ** 加粗、- 列表、# 标题等 markdown 符号
+- 直接输出编号列表，没有任何额外文字
+
+Git 提交日志：
+{GIT_LOGS}";
+
+    private static readonly string[] KnownDefaultPrompts =
+    [
+        DailyPrompt,
+        RangePrompt,
+        @"你是一个工作日报撰写助手。请根据下面的 Git 提交日志，生成一份工作汇报。
+
+严格按以下要求输出：
+- 只用 1. 2. 3. 4. 的编号格式，每条一行
+- 每一条用通俗易懂的中文描述做了什么、有什么价值
+- 将相似的工作合并归类到同一条
+- 不要输出任何标题、开头语、结束语
+- 不要使用 ** 加粗、- 列表、# 标题等 markdown 符号
+- 直接输出编号列表，没有任何额外文字
+
+Git 提交日志：
+{GIT_LOGS}"
+    ];
 
     public MainViewModel(IGitService gitService, IDeepseekService deepseekService, ISettingsService settingsService)
     {
@@ -56,19 +92,44 @@ Git 提交日志：
                 _apiKey = decrypted;
         }
 
-        _promptTemplate = string.IsNullOrWhiteSpace(_settings.CustomPrompt)
-            ? DefaultPrompt
-            : _settings.CustomPrompt;
-
         _startDate = ParseSavedDate(_settings.LastStartDate, _settings.LastSelectedDate);
         _endDate = ParseSavedDate(_settings.LastEndDate, _startDate.ToString("yyyy-MM-dd"));
         if (_endDate < _startDate)
             _endDate = _startDate;
 
+        _includeAllBranches = _settings.IncludeAllBranches;
+        _excludeMerges = _settings.ExcludeMerges;
+        _useAuthorDate = _settings.UseAuthorDate;
+
+        _promptTemplate = string.IsNullOrWhiteSpace(_settings.CustomPrompt) || IsKnownDefault(_settings.CustomPrompt)
+            ? GetDefaultPromptForRange()
+            : _settings.CustomPrompt;
+
         RepoPaths.CollectionChanged += OnRepoPathsChanged;
         Authors.CollectionChanged += OnAuthorsChanged;
 
         _isInitialized = true;
+    }
+
+    public async Task InitializeAsync()
+    {
+        var (available, version) = await _gitService.GetGitVersionAsync();
+        IsGitAvailable = available;
+        if (available)
+        {
+            StatusMessage = string.IsNullOrWhiteSpace(version) ? "就绪" : $"就绪 · {version}";
+        }
+        else
+        {
+            StatusMessage = "未检测到 Git，请先安装 Git 并确保已加入 PATH";
+            MessageBox.Show(
+                "未检测到 Git。\n\n请安装 Git for Windows，并确保 git 命令可用后重新打开本程序。",
+                "未检测到 Git",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+
+        NotifyBusyCommands();
     }
 
     private static DateTime ParseSavedDate(string? value, string fallback)
@@ -101,6 +162,12 @@ Git 提交日志：
             ? StartDate.ToString("yyyy年MM月dd日")
             : $"{StartDate:yyyy年MM月dd日} 至 {EndDate:yyyy年MM月dd日}";
 
+    public bool IsSingleDay => StartDate.Date == EndDate.Date;
+
+    public string GenerateButtonText => IsSingleDay ? "✨ 生成日报" : "✨ 生成汇报";
+
+    public string ReportHeaderText => IsSingleDay ? "🤖 AI 生成的工作日报" : "🤖 AI 生成的工作汇报";
+
     partial void OnStartDateChanged(DateTime value)
     {
         if (value == default)
@@ -110,8 +177,10 @@ Git 提交日志：
         }
         if (value > EndDate)
             EndDate = value;
-        OnPropertyChanged(nameof(DateRangeDisplay));
+        NotifyDateBoundProperties();
+        ApplyDefaultPromptIfNeeded();
         if (_isInitialized) SaveSettings();
+        ScheduleAutoFetch();
     }
 
     partial void OnEndDateChanged(DateTime value)
@@ -123,8 +192,10 @@ Git 提交日志：
         }
         if (value < StartDate)
             StartDate = value;
-        OnPropertyChanged(nameof(DateRangeDisplay));
+        NotifyDateBoundProperties();
+        ApplyDefaultPromptIfNeeded();
         if (_isInitialized) SaveSettings();
+        ScheduleAutoFetch();
     }
 
     public ObservableCollection<string> RepoPaths { get; } = [];
@@ -142,18 +213,52 @@ Git 提交日志：
     private bool _isLoading;
 
     [ObservableProperty]
+    private bool _isGitAvailable = true;
+
+    [ObservableProperty]
     private string _statusMessage = "就绪";
 
     [ObservableProperty]
     private bool _isApiKeyVisible;
 
     [ObservableProperty]
-    private string _promptTemplate = DefaultPrompt;
+    private string _promptTemplate = DailyPrompt;
 
     partial void OnPromptTemplateChanged(string value)
     {
         if (_isInitialized) SaveSettings();
     }
+
+    [ObservableProperty]
+    private bool _includeAllBranches;
+
+    [ObservableProperty]
+    private bool _excludeMerges = true;
+
+    [ObservableProperty]
+    private bool _useAuthorDate = true;
+
+    partial void OnIncludeAllBranchesChanged(bool value)
+    {
+        if (_isInitialized) SaveSettings();
+        ScheduleAutoFetch();
+    }
+
+    partial void OnExcludeMergesChanged(bool value)
+    {
+        if (_isInitialized) SaveSettings();
+        ScheduleAutoFetch();
+    }
+
+    partial void OnUseAuthorDateChanged(bool value)
+    {
+        if (_isInitialized) SaveSettings();
+        ScheduleAutoFetch();
+    }
+
+    partial void OnIsLoadingChanged(bool value) => NotifyBusyCommands();
+
+    partial void OnIsGitAvailableChanged(bool value) => NotifyBusyCommands();
 
     // ==================== 作者筛选 ====================
 
@@ -170,7 +275,9 @@ Git 提交日志：
 
     // ==================== 命令 ====================
 
-    [RelayCommand]
+    private bool CanFetchLogs() => !IsLoading && IsGitAvailable;
+
+    [RelayCommand(CanExecute = nameof(CanFetchLogs))]
     private async Task FetchLogsAsync()
     {
         if (RepoPaths.Count == 0)
@@ -179,6 +286,7 @@ Git 提交日志：
             return;
         }
 
+        var ct = BeginWork(out var workId);
         try
         {
             IsLoading = true;
@@ -191,18 +299,32 @@ Git 提交日志：
             if (end < start)
                 (start, end) = (end, start);
 
+            var query = new GitLogQuery
+            {
+                StartDate = start,
+                EndDate = end,
+                IncludeAllBranches = IncludeAllBranches,
+                ExcludeMerges = ExcludeMerges,
+                UseAuthorDate = UseAuthorDate
+            };
+
             _allCommits = [];
             var failedRepos = new List<string>();
             var allAuthors = new HashSet<(string Name, string Email)>();
 
             foreach (var repoPath in RepoPaths)
             {
+                ct.ThrowIfCancellationRequested();
                 try
                 {
-                    var commits = await _gitService.GetCommitsAsync(repoPath, start, end);
+                    var commits = await _gitService.GetCommitsAsync(repoPath, query, ct);
                     _allCommits.AddRange(commits);
                     foreach (var c in commits)
                         allAuthors.Add((c.Author, c.AuthorEmail));
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -210,7 +332,6 @@ Git 提交日志：
                 }
             }
 
-            // 更新作者列表
             var savedEmails = _settings.SelectedAuthorEmails.ToHashSet();
             var hasSavedSelection = savedEmails.Count > 0;
 
@@ -232,7 +353,13 @@ Git 提交日志：
                 author.PropertyChanged += OnAuthorItemPropertyChanged;
             }
 
+            _hasFetched = true;
             RefreshLogsDisplay(failedRepos);
+            StatusMessage = $"已获取 {_allCommits.Count} 条提交（{DateRangeDisplay}）";
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            StatusMessage = "已取消获取日志";
         }
         catch (Exception ex)
         {
@@ -241,12 +368,15 @@ Git 提交日志：
         }
         finally
         {
-            IsLoading = false;
+            if (workId == _workGeneration)
+                IsLoading = false;
             SaveSettings();
         }
     }
 
-    [RelayCommand]
+    private bool CanGenerateReport() => !IsLoading;
+
+    [RelayCommand(CanExecute = nameof(CanGenerateReport))]
     private async Task GenerateReportAsync()
     {
         if (string.IsNullOrWhiteSpace(ApiKey))
@@ -268,19 +398,24 @@ Git 提交日志：
             return;
         }
 
+        var ct = BeginWork(out var workId);
         try
         {
             IsLoading = true;
-            StatusMessage = "正在调用 Deepseek API 生成日报...";
+            StatusMessage = IsSingleDay ? "正在调用 Deepseek API 生成日报..." : "正在调用 Deepseek API 生成汇报...";
             Report = string.Empty;
 
             var logsText = $"统计周期: {DateRangeDisplay}\n\n" + _gitService.FormatCommitsForPrompt(filteredCommits);
             var prompt = PromptTemplate.Replace("{GIT_LOGS}", logsText);
 
-            var report = await _deepseekService.GenerateDailyReportWithPromptAsync(prompt, ApiKey);
+            var report = await _deepseekService.GenerateDailyReportWithPromptAsync(prompt, ApiKey, ct);
 
             Report = report;
-            StatusMessage = "日报生成完成！";
+            StatusMessage = IsSingleDay ? "日报生成完成，可直接编辑后再复制。" : "汇报生成完成，可直接编辑后再复制。";
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            StatusMessage = "已取消生成";
         }
         catch (Exception ex)
         {
@@ -289,9 +424,19 @@ Git 提交日志：
         }
         finally
         {
-            IsLoading = false;
+            if (workId == _workGeneration)
+                IsLoading = false;
             SaveSettings();
         }
+    }
+
+    private bool CanCancelWork() => IsLoading;
+
+    [RelayCommand(CanExecute = nameof(CanCancelWork))]
+    private void CancelWork()
+    {
+        _workCts?.Cancel();
+        StatusMessage = "正在取消...";
     }
 
     [RelayCommand]
@@ -305,12 +450,33 @@ Git 提交日志：
     }
 
     [RelayCommand]
+    private void BrowseRepo()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "选择 Git 仓库文件夹",
+            Multiselect = false
+        };
+
+        if (!string.IsNullOrWhiteSpace(NewRepoPath) && Directory.Exists(NewRepoPath))
+            dialog.InitialDirectory = NewRepoPath;
+        else if (RepoPaths.Count > 0 && Directory.Exists(RepoPaths[0]))
+            dialog.InitialDirectory = RepoPaths[0];
+
+        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.FolderName))
+            return;
+
+        NewRepoPath = dialog.FolderName;
+        AddRepo();
+    }
+
+    [RelayCommand]
     private void AddRepo()
     {
         var path = NewRepoPath?.Trim();
         if (string.IsNullOrWhiteSpace(path))
         {
-            MessageBox.Show("请输入仓库路径。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("请输入或选择仓库路径。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         if (!Directory.Exists(path))
@@ -318,7 +484,7 @@ Git 提交日志：
             MessageBox.Show($"目录不存在:\n{path}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
-        if (!Directory.Exists(Path.Combine(path, ".git")))
+        if (!Directory.Exists(Path.Combine(path, ".git")) && !File.Exists(Path.Combine(path, ".git")))
         {
             var result = MessageBox.Show($"该目录下未找到 .git 文件夹，确定要添加吗？\n\n{path}", "确认", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             if (result != MessageBoxResult.Yes) return;
@@ -357,8 +523,8 @@ Git 提交日志：
         var result = MessageBox.Show("确定要恢复默认 Prompt 模板吗？", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (result == MessageBoxResult.Yes)
         {
-            PromptTemplate = DefaultPrompt;
-            StatusMessage = "Prompt 已恢复为默认模板";
+            PromptTemplate = GetDefaultPromptForRange();
+            StatusMessage = "Prompt 已恢复为当前日期范围的默认模板";
         }
     }
 
@@ -389,12 +555,6 @@ Git 提交日志：
         SaveAuthorSelection();
     }
 
-    [RelayCommand]
-    private void ApplyAuthorFilter()
-    {
-        RefreshLogsDisplay();
-    }
-
     private void OnAuthorItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(AuthorItem.IsSelected) || _suppressSelectAllSync)
@@ -409,6 +569,72 @@ Git 提交日志：
 
     // ==================== 私有方法 ====================
 
+    private CancellationToken BeginWork(out int workId)
+    {
+        _workCts?.Cancel();
+        _workCts?.Dispose();
+        _workCts = new CancellationTokenSource();
+        workId = ++_workGeneration;
+        return _workCts.Token;
+    }
+
+    private void ScheduleAutoFetch()
+    {
+        if (!_isInitialized || !_hasFetched) return;
+        if (IsLoading)
+        {
+            StatusMessage = "当前任务完成后，请重新获取日志";
+            return;
+        }
+
+        _autoFetchCts?.Cancel();
+        _autoFetchCts?.Dispose();
+        _autoFetchCts = new CancellationTokenSource();
+        var token = _autoFetchCts.Token;
+        _ = AutoFetchAsync(token);
+    }
+
+    private async Task AutoFetchAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(400, token);
+            if (IsLoading || !IsGitAvailable) return;
+            await FetchLogsAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // 日期连续变更时取消上一次自动刷新
+        }
+    }
+
+    private void NotifyDateBoundProperties()
+    {
+        OnPropertyChanged(nameof(DateRangeDisplay));
+        OnPropertyChanged(nameof(IsSingleDay));
+        OnPropertyChanged(nameof(GenerateButtonText));
+        OnPropertyChanged(nameof(ReportHeaderText));
+    }
+
+    private void NotifyBusyCommands()
+    {
+        FetchLogsCommand.NotifyCanExecuteChanged();
+        GenerateReportCommand.NotifyCanExecuteChanged();
+        CancelWorkCommand.NotifyCanExecuteChanged();
+    }
+
+    private string GetDefaultPromptForRange() => IsSingleDay ? DailyPrompt : RangePrompt;
+
+    private static bool IsKnownDefault(string prompt) =>
+        KnownDefaultPrompts.Any(d => string.Equals(d.Trim(), prompt.Trim(), StringComparison.Ordinal));
+
+    private void ApplyDefaultPromptIfNeeded()
+    {
+        if (!_isInitialized) return;
+        if (IsKnownDefault(PromptTemplate))
+            PromptTemplate = GetDefaultPromptForRange();
+    }
+
     private List<GitCommit> GetFilteredCommits()
     {
         if (!EnableAuthorFilter || Authors.Count == 0) return _allCommits;
@@ -422,9 +648,15 @@ Git 提交日志：
     {
         var filtered = GetFilteredCommits();
         var selectedAuthorCount = Authors.Count(a => a.IsSelected);
+        var branchText = IncludeAllBranches ? "所有分支" : "当前分支";
+        var extra = new List<string>();
+        if (ExcludeMerges) extra.Add("已排除 Merge");
+        if (UseAuthorDate) extra.Add("按作者日期");
+
         var logText = new List<string>
         {
             $"📅 日期: {DateRangeDisplay}",
+            $"🌿 范围: {branchText}" + (extra.Count > 0 ? $"  ·  {string.Join("  ·  ", extra)}" : string.Empty),
             $"👤 提交人: {selectedAuthorCount}/{Authors.Count} 人",
             $"📊 筛选后: {filtered.Count} 条提交  /  总计: {_allCommits.Count} 条",
             ""
@@ -470,11 +702,14 @@ Git 提交日志：
         {
             _settings.RepoPaths = [.. RepoPaths];
             _settings.EncryptedApiKey = _settingsService.EncryptApiKey(ApiKey);
-            _settings.CustomPrompt = PromptTemplate != DefaultPrompt ? PromptTemplate : string.Empty;
+            _settings.CustomPrompt = IsKnownDefault(PromptTemplate) ? string.Empty : PromptTemplate;
             _settings.LastStartDate = StartDate.ToString("yyyy-MM-dd");
             _settings.LastEndDate = EndDate.ToString("yyyy-MM-dd");
             _settings.LastSelectedDate = StartDate.ToString("yyyy-MM-dd");
             _settings.SelectedAuthorEmails = Authors.Where(a => a.IsSelected).Select(a => a.Email).ToList();
+            _settings.IncludeAllBranches = IncludeAllBranches;
+            _settings.ExcludeMerges = ExcludeMerges;
+            _settings.UseAuthorDate = UseAuthorDate;
             _settingsService.SaveSettings(_settings);
         }
         catch { }

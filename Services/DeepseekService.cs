@@ -15,7 +15,6 @@ public class DeepseekService : IDeepseekService
     public DeepseekService(HttpClient httpClient)
     {
         _httpClient = httpClient;
-        _httpClient.Timeout = TimeSpan.FromMinutes(3);
     }
 
     /// <inheritdoc />
