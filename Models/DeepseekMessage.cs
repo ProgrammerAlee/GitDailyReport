@@ -30,6 +30,9 @@ public class DeepseekRequest
 
     [JsonPropertyName("max_tokens")]
     public int MaxTokens { get; set; } = 4096;
+
+    [JsonPropertyName("stream")]
+    public bool Stream { get; set; }
 }
 
 /// <summary>
@@ -48,6 +51,15 @@ public class DeepseekChoice
 {
     [JsonPropertyName("message")]
     public DeepseekMessage Message { get; set; } = new();
+
+    [JsonPropertyName("delta")]
+    public DeepseekDelta? Delta { get; set; }
+}
+
+public class DeepseekDelta
+{
+    [JsonPropertyName("content")]
+    public string? Content { get; set; }
 }
 
 public class DeepseekError

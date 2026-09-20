@@ -272,18 +272,26 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="{Binding ReportHeaderText}" Style="{StaticResource SectionHeader}"
                                        VerticalAlignment="Center" Margin="0"/>
-                            <Button Grid.Column="1" Content="📋 复制报告"
+                            <Button Grid.Column="1" Content="📤 导出"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding ExportReportCommand}" Margin="0,0,8,0"/>
+                            <Button Grid.Column="2" Content="📋 复制报告"
                                     Style="{StaticResource SecondaryButton}"
                                     Command="{Binding CopyReportCommand}" Margin="0,0,8,0"/>
-                            <Button Grid.Column="2" Content="{Binding GenerateButtonText}"
+                            <Button Grid.Column="3" Content="🔁 再生成"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding RegenerateReportCommand}" Margin="0,0,8,0"/>
+                            <Button Grid.Column="4" Content="{Binding GenerateButtonText}"
                                     Style="{StaticResource PrimaryButton}"
                                     Command="{Binding GenerateReportCommand}"/>
                         </Grid>
 
-                        <TextBlock Text="生成后可直接修改，再复制发给别人。" FontSize="12"
+                        <TextBlock Text="生成过程会实时显示。完成后可再生成，或导出为 Markdown / 文本。" FontSize="12"
                                    Foreground="{StaticResource TextSecondaryColor}" Margin="0,0,0,8"/>
 
                         <TextBox Text="{Binding Report, UpdateSourceTrigger=PropertyChanged}"

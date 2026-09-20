@@ -290,7 +290,9 @@ Git 提交日志：
         try
         {
             IsLoading = true;
-            StatusMessage = "正在获取 Git 提交日志...";
+            StatusMessage = RepoPaths.Count > 1
+                ? $"正在并行获取 {RepoPaths.Count} 个仓库的提交日志..."
+                : "正在获取 Git 提交日志...";
             GitLogs = string.Empty;
             Report = string.Empty;
 
@@ -308,19 +310,12 @@ Git 提交日志：
                 UseAuthorDate = UseAuthorDate
             };
 
-            _allCommits = [];
-            var failedRepos = new List<string>();
-            var allAuthors = new HashSet<(string Name, string Email)>();
-
-            foreach (var repoPath in RepoPaths)
+            var fetchTasks = RepoPaths.Select(async repoPath =>
             {
-                ct.ThrowIfCancellationRequested();
                 try
                 {
                     var commits = await _gitService.GetCommitsAsync(repoPath, query, ct);
-                    _allCommits.AddRange(commits);
-                    foreach (var c in commits)
-                        allAuthors.Add((c.Author, c.AuthorEmail));
+                    return (RepoPath: repoPath, Commits: commits, Error: (string?)null);
                 }
                 catch (OperationCanceledException)
                 {
@@ -328,8 +323,23 @@ Git 提交日志：
                 }
                 catch (Exception ex)
                 {
-                    failedRepos.Add($"{Path.GetFileName(repoPath)}: {ex.Message}");
+                    return (RepoPath: repoPath, Commits: new List<GitCommit>(), Error: $"{Path.GetFileName(repoPath)}: {ex.Message}");
                 }
+            });
+
+            var results = await Task.WhenAll(fetchTasks);
+
+            _allCommits = [];
+            var failedRepos = new List<string>();
+            var allAuthors = new HashSet<(string Name, string Email)>();
+
+            foreach (var result in results)
+            {
+                if (!string.IsNullOrWhiteSpace(result.Error))
+                    failedRepos.Add(result.Error);
+                _allCommits.AddRange(result.Commits);
+                foreach (var c in result.Commits)
+                    allAuthors.Add((c.Author, c.AuthorEmail));
             }
 
             var savedEmails = _settings.SelectedAuthorEmails.ToHashSet();
@@ -357,7 +367,7 @@ Git 提交日志：
             RefreshLogsDisplay(failedRepos);
             StatusMessage = $"已获取 {_allCommits.Count} 条提交（{DateRangeDisplay}）";
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception) when (ct.IsCancellationRequested)
         {
             StatusMessage = "已取消获取日志";
         }
@@ -402,18 +412,25 @@ Git 提交日志：
         try
         {
             IsLoading = true;
-            StatusMessage = IsSingleDay ? "正在调用 Deepseek API 生成日报..." : "正在调用 Deepseek API 生成汇报...";
+            StatusMessage = IsSingleDay ? "正在生成日报..." : "正在生成汇报...";
             Report = string.Empty;
 
             var logsText = $"统计周期: {DateRangeDisplay}\n\n" + _gitService.FormatCommitsForPrompt(filteredCommits);
             var prompt = PromptTemplate.Replace("{GIT_LOGS}", logsText);
+            var progress = new Progress<string>(text =>
+            {
+                if (workId != _workGeneration) return;
+                Report = text;
+                StatusMessage = IsSingleDay ? "正在生成日报..." : "正在生成汇报...";
+            });
 
-            var report = await _deepseekService.GenerateDailyReportWithPromptAsync(prompt, ApiKey, ct);
+            var report = await _deepseekService.GenerateDailyReportWithPromptAsync(prompt, ApiKey, progress, ct);
 
-            Report = report;
-            StatusMessage = IsSingleDay ? "日报生成完成，可直接编辑后再复制。" : "汇报生成完成，可直接编辑后再复制。";
+            if (workId == _workGeneration)
+                Report = report;
+            StatusMessage = IsSingleDay ? "日报生成完成，可直接编辑、再生成或导出。" : "汇报生成完成，可直接编辑、再生成或导出。";
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception) when (ct.IsCancellationRequested)
         {
             StatusMessage = "已取消生成";
         }
@@ -437,6 +454,44 @@ Git 提交日志：
     {
         _workCts?.Cancel();
         StatusMessage = "正在取消...";
+    }
+
+    private bool CanRegenerateReport() =>
+        !IsLoading && !string.IsNullOrWhiteSpace(Report) && !string.IsNullOrWhiteSpace(GitLogs);
+
+    [RelayCommand(CanExecute = nameof(CanRegenerateReport))]
+    private Task RegenerateReportAsync() => GenerateReportAsync();
+
+    private bool CanExportReport() => !IsLoading && !string.IsNullOrWhiteSpace(Report);
+
+    [RelayCommand(CanExecute = nameof(CanExportReport))]
+    private void ExportReport()
+    {
+        var defaultName = IsSingleDay
+            ? $"工作日报-{StartDate:yyyy-MM-dd}"
+            : $"工作汇报-{StartDate:yyyy-MM-dd}_{EndDate:yyyy-MM-dd}";
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "导出报告",
+            FileName = defaultName,
+            Filter = "Markdown 文件 (*.md)|*.md|文本文件 (*.txt)|*.txt",
+            DefaultExt = ".md",
+            AddExtension = true
+        };
+
+        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.FileName))
+            return;
+
+        var content = Report;
+        if (Path.GetExtension(dialog.FileName).Equals(".md", StringComparison.OrdinalIgnoreCase))
+        {
+            var title = IsSingleDay ? "工作日报" : "工作汇报";
+            content = $"# {title}{Environment.NewLine}{Environment.NewLine}统计周期：{DateRangeDisplay}{Environment.NewLine}{Environment.NewLine}{Report.Trim()}{Environment.NewLine}";
+        }
+
+        File.WriteAllText(dialog.FileName, content);
+        StatusMessage = $"已导出: {Path.GetFileName(dialog.FileName)}";
     }
 
     [RelayCommand]
@@ -621,6 +676,8 @@ Git 提交日志：
         FetchLogsCommand.NotifyCanExecuteChanged();
         GenerateReportCommand.NotifyCanExecuteChanged();
         CancelWorkCommand.NotifyCanExecuteChanged();
+        RegenerateReportCommand.NotifyCanExecuteChanged();
+        ExportReportCommand.NotifyCanExecuteChanged();
     }
 
     private string GetDefaultPromptForRange() => IsSingleDay ? DailyPrompt : RangePrompt;
