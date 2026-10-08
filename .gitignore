@@ -11,6 +11,9 @@ obj/
 publish/
 publish-self-contained/
 
+# gai 本地用量记录，含邮箱、本机路径和接口地址
+.gai/
+
 # OS
 .DS_Store
 Thumbs.db
