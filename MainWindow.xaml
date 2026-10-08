@@ -4,8 +4,8 @@
         Title="Git 工作日报生成器"
         Width="1280"
         Height="860"
-        MinWidth="960"
-        MinHeight="700"
+        MinWidth="1100"
+        MinHeight="720"
         Icon="icon.ico"
         Background="{StaticResource BgColor}"
         WindowStartupLocation="CenterScreen">
@@ -15,27 +15,30 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="420" MinWidth="340"/>
+            <ColumnDefinition Width="8"/>
+            <ColumnDefinition Width="*" MinWidth="480"/>
+        </Grid.ColumnDefinitions>
 
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="24,20">
+        <ScrollViewer Grid.Row="0" Grid.Column="0" VerticalScrollBarVisibility="Auto" Padding="24,20,12,20">
             <StackPanel>
 
-                <!-- ===== 标题 ===== -->
                 <TextBlock Text="📋 Git 工作日报生成器"
-                           FontSize="24" FontWeight="Bold"
+                           FontSize="22" FontWeight="Bold"
                            Foreground="{StaticResource TextPrimaryColor}" Margin="0,0,0,4"/>
-                <TextBlock Text="自动获取 Git 提交日志，使用 Deepseek AI 生成通俗易懂的工作日报"
-                           FontSize="13" Foreground="{StaticResource TextSecondaryColor}" Margin="0,0,0,20"/>
+                <TextBlock Text="获取提交日志，生成能直接交给别人看的日报或阶段汇报"
+                           FontSize="13" Foreground="{StaticResource TextSecondaryColor}"
+                           TextWrapping="Wrap" Margin="0,0,0,16"/>
 
-                <!-- ===== 设置卡片 ===== -->
                 <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                     <StackPanel>
                         <TextBlock Text="⚙️ 设置" Style="{StaticResource SectionHeader}"/>
 
-                        <!-- API Key -->
                         <TextBlock Text="Deepseek API Key" Style="{StaticResource LabelText}" Margin="0,0,0,4"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*" MinWidth="0"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
@@ -53,11 +56,10 @@
                                     Click="OpenApiKeyUrl_Click"/>
                         </Grid>
 
-                        <!-- 仓库路径 -->
                         <TextBlock Text="Git 仓库路径" Style="{StaticResource LabelText}"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*" MinWidth="0"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
@@ -67,11 +69,11 @@
                             <Button Grid.Column="1" Content="📂 浏览"
                                     Style="{StaticResource SecondaryButton}"
                                     Command="{Binding BrowseRepoCommand}"
-                                    MinWidth="88" Margin="8,0,0,0"/>
-                            <Button Grid.Column="2" Content="➕ 添加仓库"
+                                    MinWidth="80" Margin="8,0,0,0"/>
+                            <Button Grid.Column="2" Content="➕ 添加"
                                     Style="{StaticResource PrimaryButton}"
                                     Command="{Binding AddRepoCommand}"
-                                    MinWidth="100" Padding="16,10"
+                                    MinWidth="80" Padding="12,10"
                                     Margin="8,0,0,0"/>
                         </Grid>
 
@@ -82,29 +84,28 @@
                                             CornerRadius="6" Padding="10,6" Margin="0,0,0,4">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="*" MinWidth="0"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                                <TextBlock Text="📁" FontSize="13"
-                                                           VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                                <TextBlock Text="{Binding}" FontSize="12"
-                                                           Foreground="{StaticResource TextPrimaryColor}"
-                                                           VerticalAlignment="Center" ToolTip="{Binding}"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="1" Content="✕ 删除"
+                                            <TextBlock Grid.Column="0" Text="{Binding}" FontSize="12"
+                                                       Foreground="{StaticResource TextPrimaryColor}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding}"/>
+                                            <Button Grid.Column="1" Content="✕"
                                                     Style="{StaticResource DangerButton}"
                                                     Command="{Binding DataContext.RemoveRepoCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}"/>
+                                                    CommandParameter="{Binding}"
+                                                    Margin="8,0,0,0" Padding="8,2"/>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
 
-                        <!-- 没有仓库时的提示 -->
-                        <TextBlock Text="还没有添加仓库，请点击「浏览」选择文件夹，或手动输入路径后添加"
-                                   FontSize="12" Foreground="{StaticResource TextSecondaryColor}" Margin="0,4,0,0">
+                        <TextBlock Text="还没有添加仓库。点「浏览」选择文件夹，或输入路径后添加。"
+                                   FontSize="12" Foreground="{StaticResource TextSecondaryColor}"
+                                   TextWrapping="Wrap" Margin="0,4,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -117,42 +118,45 @@
                             </TextBlock.Style>
                         </TextBlock>
 
-                        <!-- 查询日期 -->
                         <TextBlock Text="查询日期" Style="{StaticResource LabelText}"/>
-                        <Grid>
+                        <Grid Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
                             <TextBlock Text="从" FontSize="13"
                                        Foreground="{StaticResource TextSecondaryColor}"
-                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                       VerticalAlignment="Center" Margin="0,0,8,8"/>
                             <DatePicker Grid.Column="1"
                                         SelectedDate="{Binding StartDate, UpdateSourceTrigger=PropertyChanged}"
                                         SelectedDateFormat="Short"
+                                        Margin="0,0,0,8"
                                         ToolTip="开始日期"/>
-                            <TextBlock Grid.Column="2" Text="到" FontSize="13"
+                            <TextBlock Grid.Row="1" Text="到" FontSize="13"
                                        Foreground="{StaticResource TextSecondaryColor}"
-                                       VerticalAlignment="Center" Margin="10,0,8,0"/>
-                            <DatePicker Grid.Column="3"
+                                       VerticalAlignment="Center" Margin="0,0,8,8"/>
+                            <DatePicker Grid.Row="1" Grid.Column="1"
                                         SelectedDate="{Binding EndDate, UpdateSourceTrigger=PropertyChanged}"
                                         SelectedDateFormat="Short"
-                                        ToolTip="结束日期（可与开始日期相同，表示只查一天）"/>
-                            <Button Grid.Column="4" Content="今天"
-                                    Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding SetTodayCommand}"
-                                    Margin="8,0,0,0" Padding="12,8" MinHeight="36"/>
-                            <Button Grid.Column="5" Content="近7天"
-                                    Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding SetLast7DaysCommand}"
-                                    Margin="8,0,0,0" Padding="12,8" MinHeight="36"/>
+                                        Margin="0,0,0,8"
+                                        ToolTip="结束日期（与开始日期相同表示只查一天）"/>
+                            <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal">
+                                <Button Content="今天"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Command="{Binding SetTodayCommand}"
+                                        Padding="12,8" MinHeight="36"/>
+                                <Button Content="近7天"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Command="{Binding SetLast7DaysCommand}"
+                                        Margin="8,0,0,0" Padding="12,8" MinHeight="36"/>
+                            </StackPanel>
                         </Grid>
 
-                        <!-- 查询选项 -->
                         <WrapPanel Margin="0,12,0,0">
                             <CheckBox Content="所有分支"
                                       IsChecked="{Binding IncludeAllBranches}"
@@ -162,17 +166,16 @@
                                       ToolTip="勾选后不统计 merge 提交，日报更干净"/>
                             <CheckBox Content="按作者日期"
                                       IsChecked="{Binding UseAuthorDate}"
-                                      ToolTip="按作者提交日期筛选，减少时区/提交者日期造成的漏记或多记"/>
+                                      ToolTip="按作者提交日期筛选，减少时区或提交者日期造成的漏记"/>
                         </WrapPanel>
                     </StackPanel>
                 </Border>
 
-                <!-- ===== 提交者筛选卡片 ===== -->
                 <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
                     <StackPanel>
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*" MinWidth="0"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="👤 提交人筛选" Style="{StaticResource SectionHeader}"
@@ -183,11 +186,28 @@
                                       Visibility="{Binding HasAuthors, Converter={StaticResource BoolToVisibilityConverter}}"/>
                         </Grid>
 
+                        <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryColor}"
+                                   TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="{Binding MyEmailsDisplay, StringFormat={}我的邮箱：{0}}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button Content="只看我"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding SelectOnlyMeCommand}"
+                                    Padding="12,6" MinHeight="32"
+                                    ToolTip="只勾选已记为“我”的邮箱"/>
+                            <Button Content="记为我"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding RememberMyEmailsCommand}"
+                                    Margin="8,0,0,0" Padding="12,6" MinHeight="32"
+                                    ToolTip="用当前勾选的提交人替换“我的邮箱”。同一人有多个邮箱时，都勾上再记。"/>
+                        </StackPanel>
+
                         <TextBlock Text="获取日志后可勾选要包含的提交人，勾选会立即生效。" FontSize="12"
-                                   Foreground="{StaticResource TextSecondaryColor}" Margin="0,0,0,8"/>
+                                   Foreground="{StaticResource TextSecondaryColor}" TextWrapping="Wrap" Margin="0,0,0,8"/>
 
                         <TextBlock Text="还没有提交人，请先选择日期并点击「获取日志」。"
                                    FontSize="12" Foreground="{StaticResource TextSecondaryColor}"
+                                   TextWrapping="Wrap"
                                    Visibility="{Binding HasAuthors, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"/>
 
                         <ItemsControl ItemsSource="{Binding Authors}">
@@ -200,7 +220,7 @@
                                 <DataTemplate>
                                     <CheckBox Content="{Binding DisplayText}"
                                               IsChecked="{Binding IsSelected}"
-                                              FontSize="12" Margin="0,2,20,2"
+                                              FontSize="12" Margin="0,2,16,2"
                                               Foreground="{StaticResource TextPrimaryColor}"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
@@ -208,53 +228,27 @@
                     </StackPanel>
                 </Border>
 
-                <!-- ===== Git 日志卡片 ===== -->
-                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
-                    <StackPanel>
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="📜 Git 提交日志" Style="{StaticResource SectionHeader}"
-                                       VerticalAlignment="Center" Margin="0"/>
-                            <Button Grid.Column="1" Content="🔄 获取日志"
-                                    Style="{StaticResource PrimaryButton}"
-                                    Command="{Binding FetchLogsCommand}"/>
-                        </Grid>
-
-                        <TextBox Text="{Binding GitLogs, Mode=OneWay}"
-                                 IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
-                                 MinHeight="150" MaxHeight="280"
-                                 VerticalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas, Microsoft YaHei UI" FontSize="12"
-                                 Background="{StaticResource BgColor}"
-                                 BorderBrush="{StaticResource BorderColor}"
-                                 Padding="12,10"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- ===== Prompt 编辑器卡片 ===== -->
-                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                <Border Style="{StaticResource CardBorder}">
                     <StackPanel>
                         <Grid Margin="0,0,0,8">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*" MinWidth="0"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Style="{StaticResource SectionHeader}" VerticalAlignment="Center" Margin="0">
+                            <TextBlock Style="{StaticResource SectionHeader}" VerticalAlignment="Center" Margin="0" TextWrapping="Wrap">
                                 <Run Text="✏️ Prompt 模板"/>
                                 <Run Text="（{GIT_LOGS} 作为占位符）" FontSize="11"
                                      Foreground="{StaticResource TextSecondaryColor}"/>
                             </TextBlock>
-                            <Button Grid.Column="1" Content="🔄 恢复默认"
+                            <Button Grid.Column="1" Content="恢复默认"
                                     Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding ResetPromptCommand}"/>
+                                    Command="{Binding ResetPromptCommand}"
+                                    Margin="8,0,0,0"/>
                         </Grid>
 
                         <TextBox Text="{Binding PromptTemplate, UpdateSourceTrigger=PropertyChanged}"
                                  TextWrapping="Wrap" AcceptsReturn="True"
-                                 MinHeight="100" MaxHeight="200"
+                                 MinHeight="120" MaxHeight="220"
                                  VerticalScrollBarVisibility="Auto"
                                  FontFamily="Consolas, Microsoft YaHei UI" FontSize="12"
                                  Background="{StaticResource BgColor}"
@@ -264,52 +258,114 @@
                     </StackPanel>
                 </Border>
 
-                <!-- ===== AI 报告卡片 ===== -->
-                <Border Style="{StaticResource CardBorder}" Margin="0,0,0,16">
-                    <StackPanel>
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding ReportHeaderText}" Style="{StaticResource SectionHeader}"
-                                       VerticalAlignment="Center" Margin="0"/>
-                            <Button Grid.Column="1" Content="📤 导出"
-                                    Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding ExportReportCommand}" Margin="0,0,8,0"/>
-                            <Button Grid.Column="2" Content="📋 复制报告"
-                                    Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding CopyReportCommand}" Margin="0,0,8,0"/>
-                            <Button Grid.Column="3" Content="🔁 再生成"
-                                    Style="{StaticResource SecondaryButton}"
-                                    Command="{Binding RegenerateReportCommand}" Margin="0,0,8,0"/>
-                            <Button Grid.Column="4" Content="{Binding GenerateButtonText}"
-                                    Style="{StaticResource PrimaryButton}"
-                                    Command="{Binding GenerateReportCommand}"/>
-                        </Grid>
-
-                        <TextBlock Text="生成过程会实时显示。完成后可再生成，或导出为 Markdown / 文本。" FontSize="12"
-                                   Foreground="{StaticResource TextSecondaryColor}" Margin="0,0,0,8"/>
-
-                        <TextBox Text="{Binding Report, UpdateSourceTrigger=PropertyChanged}"
-                                 TextWrapping="Wrap" AcceptsReturn="True"
-                                 MinHeight="200" MaxHeight="400"
-                                 VerticalScrollBarVisibility="Auto"
-                                 FontFamily="Microsoft YaHei UI" FontSize="13"
-                                 Background="{StaticResource BgColor}"
-                                 BorderBrush="{StaticResource BorderColor}"
-                                 Padding="12,10"/>
-                    </StackPanel>
-                </Border>
-
             </StackPanel>
         </ScrollViewer>
 
-        <!-- ===== 状态栏 ===== -->
-        <Border Grid.Row="1" Background="{StaticResource CardColor}"
+        <GridSplitter Grid.Row="0" Grid.Column="1"
+                      Width="8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                      Background="{StaticResource BgColor}"
+                      BorderBrush="{StaticResource BorderColor}" BorderThickness="1,0,0,0"
+                      ResizeBehavior="PreviousAndNext"/>
+
+        <Grid Grid.Row="0" Grid.Column="2" Margin="8,20,24,20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="4*" MinHeight="160"/>
+                <RowDefinition Height="6*" MinHeight="220"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Style="{StaticResource CardBorder}" Margin="0,0,0,16">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="0"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="📜 Git 提交日志" Style="{StaticResource SectionHeader}"
+                                   VerticalAlignment="Center" Margin="0"/>
+                        <Button Grid.Column="1" Content="🔄 获取日志"
+                                Style="{StaticResource PrimaryButton}"
+                                Command="{Binding FetchLogsCommand}"/>
+                    </Grid>
+                    <TextBox Grid.Row="1"
+                             Text="{Binding GitLogs, Mode=OneWay}"
+                             IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"
+                             FontFamily="Consolas, Microsoft YaHei UI" FontSize="12"
+                             Background="{StaticResource BgColor}"
+                             BorderBrush="{StaticResource BorderColor}"
+                             Padding="12,10"
+                             VerticalContentAlignment="Top"/>
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="1" Style="{StaticResource CardBorder}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="0"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding ReportHeaderText}" Style="{StaticResource SectionHeader}"
+                                   VerticalAlignment="Center" Margin="0" TextWrapping="Wrap"/>
+                        <WrapPanel Grid.Column="1" HorizontalAlignment="Right">
+                            <Button Content="📤 导出"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding ExportReportCommand}" Margin="0,0,8,0"/>
+                            <Button Content="📋 复制"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding CopyReportCommand}" Margin="0,0,8,0"/>
+                            <Button Content="🔁 再生成"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Command="{Binding RegenerateReportCommand}" Margin="0,0,8,0"/>
+                            <Button Content="{Binding GenerateButtonText}"
+                                    Style="{StaticResource PrimaryButton}"
+                                    Command="{Binding GenerateReportCommand}"/>
+                        </WrapPanel>
+                    </Grid>
+
+                    <TextBlock Grid.Row="1" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextSecondaryColor}" Margin="0,0,0,8"
+                               Text="{Binding PromptSizeHint, StringFormat={}生成过程会实时显示，完成后可以直接改。 {0}}"/>
+
+                    <TextBlock Grid.Row="2" Text="{Binding ReportNotice}" TextWrapping="Wrap"
+                               Foreground="{StaticResource WarningColor}" FontSize="12" Margin="0,0,0,8">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ReportNotice}" Value="">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <TextBox Grid.Row="3"
+                             Text="{Binding Report, UpdateSourceTrigger=PropertyChanged}"
+                             IsReadOnly="{Binding IsLoading}"
+                             TextWrapping="Wrap" AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"
+                             FontFamily="Microsoft YaHei UI" FontSize="13"
+                             Background="{StaticResource BgColor}"
+                             BorderBrush="{StaticResource BorderColor}"
+                             Padding="12,10"
+                             VerticalContentAlignment="Top"/>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="1" Grid.ColumnSpan="3" Background="{StaticResource CardColor}"
                 BorderBrush="{StaticResource BorderColor}" BorderThickness="0,1,0,0"
                 Padding="24,10">
             <Grid>
@@ -319,7 +375,8 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding StatusMessage}" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryColor}" VerticalAlignment="Center"/>
+                           Foreground="{StaticResource TextSecondaryColor}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" MaxWidth="640"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0" VerticalAlignment="Center">
                     <ProgressBar IsIndeterminate="{Binding IsLoading}"
                                  Height="6" Width="120" Margin="0,0,12,0"

@@ -20,7 +20,7 @@ public class DeepseekService : IDeepseekService
     }
 
     /// <inheritdoc />
-    public async Task<string> GenerateDailyReportWithPromptAsync(
+    public async Task<ReportGenerationResult> GenerateDailyReportWithPromptAsync(
         string fullPrompt,
         string apiKey,
         IProgress<string>? progress = null,
@@ -34,7 +34,7 @@ public class DeepseekService : IDeepseekService
                 new DeepseekMessage { Role = "user", Content = fullPrompt }
             ],
             Temperature = 0.7,
-            MaxTokens = 4096,
+            MaxTokens = 8192,
             Stream = true
         };
 
@@ -71,23 +71,23 @@ public class DeepseekService : IDeepseekService
             return ParseCompleteResponse(json, progress);
         }
 
-        var sb = new StringBuilder();
-        ProcessSseLine(firstLine, sb, progress);
+        var accumulator = new SseAccumulator();
+        ProcessSseLine(firstLine, accumulator, progress);
 
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             var line = await reader.ReadLineAsync(ct);
             if (line is null) break;
-            if (!ProcessSseLine(line, sb, progress))
+            if (!ProcessSseLine(line, accumulator, progress))
                 break;
         }
 
-        var result = sb.ToString().Trim();
+        var result = accumulator.Text.ToString().Trim();
         if (string.IsNullOrWhiteSpace(result))
             throw new InvalidOperationException("API 返回了空的响应内容。");
 
-        return result;
+        return new ReportGenerationResult(result, accumulator.Truncated);
     }
 
     private static async Task<string?> ReadNextNonEmptyLineAsync(StreamReader reader, CancellationToken ct)
@@ -101,7 +101,7 @@ public class DeepseekService : IDeepseekService
     }
 
     /// <returns>false 表示流结束</returns>
-    private static bool ProcessSseLine(string line, StringBuilder sb, IProgress<string>? progress)
+    private static bool ProcessSseLine(string line, SseAccumulator accumulator, IProgress<string>? progress)
     {
         if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.Ordinal))
             return true;
@@ -123,25 +123,31 @@ public class DeepseekService : IDeepseekService
         if (chunk?.Error != null)
             throw new InvalidOperationException($"API 错误: {chunk.Error.Message}");
 
-        var delta = chunk?.Choices is { Count: > 0 } ? chunk.Choices[0].Delta?.Content : null;
+        var choice = chunk?.Choices is { Count: > 0 } ? chunk.Choices[0] : null;
+        if (string.Equals(choice?.FinishReason, "length", StringComparison.OrdinalIgnoreCase))
+            accumulator.Truncated = true;
+
+        var delta = choice?.Delta?.Content;
         if (string.IsNullOrEmpty(delta))
             return true;
 
-        sb.Append(delta);
-        progress?.Report(sb.ToString());
+        accumulator.Text.Append(delta);
+        progress?.Report(accumulator.Text.ToString());
         return true;
     }
 
-    private static string ParseCompleteResponse(string json, IProgress<string>? progress)
+    private static ReportGenerationResult ParseCompleteResponse(string json, IProgress<string>? progress)
     {
         var result = JsonSerializer.Deserialize<DeepseekResponse>(json);
         if (result?.Choices is { Count: > 0 })
         {
-            var content = result.Choices[0].Message.Content;
+            var choice = result.Choices[0];
+            var content = choice.Message.Content;
             if (!string.IsNullOrWhiteSpace(content))
             {
                 progress?.Report(content);
-                return content;
+                var truncated = string.Equals(choice.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
+                return new ReportGenerationResult(content, truncated);
             }
         }
 
@@ -149,6 +155,12 @@ public class DeepseekService : IDeepseekService
             throw new InvalidOperationException($"API 错误: {result.Error.Message}");
 
         throw new InvalidOperationException("API 返回了空的响应内容。");
+    }
+
+    private sealed class SseAccumulator
+    {
+        public StringBuilder Text { get; } = new();
+        public bool Truncated { get; set; }
     }
 
     private static string TryParseError(string json)

@@ -26,6 +26,15 @@ public class GitCommit
     /// <summary>变更文件列表</summary>
     public List<string> ChangedFiles { get; init; } = [];
 
+    /// <summary>新增行数。二进制文件不计入。</summary>
+    public int Additions { get; init; }
+
+    /// <summary>删除行数。二进制文件不计入。</summary>
+    public int Deletions { get; init; }
+
+    /// <summary>二进制文件数量</summary>
+    public int BinaryFileCount { get; init; }
+
     /// <summary>所属仓库名称</summary>
     public string RepoName { get; init; } = string.Empty;
 }

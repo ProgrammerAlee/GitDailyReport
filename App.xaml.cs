@@ -24,9 +24,10 @@ public partial class App : Application
         // Services
         services.AddSingleton<ISettingsService, SettingsService>();
         services.AddSingleton<IGitService, GitService>();
+        services.AddSingleton<IDialogService, WpfDialogService>();
         services.AddSingleton(_ => new System.Net.Http.HttpClient
         {
-            Timeout = TimeSpan.FromMinutes(3)
+            Timeout = TimeSpan.FromMinutes(10)
         });
         services.AddSingleton<IDeepseekService, DeepseekService>();
 
@@ -39,6 +40,8 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+
         var mainWindow = _serviceProvider.GetRequiredService<MainWindow>();
         mainWindow.DataContext = _serviceProvider.GetRequiredService<MainViewModel>();
         mainWindow.Loaded += (_, _) =>
@@ -52,5 +55,16 @@ public partial class App : Application
     {
         _serviceProvider.Dispose();
         base.OnExit(e);
+    }
+
+    private static void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        var message = e.Exception.InnerException?.Message ?? e.Exception.Message;
+        MessageBox.Show(
+            "程序出现未处理的错误。\n\n" + message,
+            "错误",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+        e.Handled = true;
     }
 }

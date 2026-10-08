@@ -29,7 +29,7 @@ public class DeepseekRequest
     public double Temperature { get; set; } = 0.7;
 
     [JsonPropertyName("max_tokens")]
-    public int MaxTokens { get; set; } = 4096;
+    public int MaxTokens { get; set; } = 8192;
 
     [JsonPropertyName("stream")]
     public bool Stream { get; set; }
@@ -54,6 +54,9 @@ public class DeepseekChoice
 
     [JsonPropertyName("delta")]
     public DeepseekDelta? Delta { get; set; }
+
+    [JsonPropertyName("finish_reason")]
+    public string? FinishReason { get; set; }
 }
 
 public class DeepseekDelta

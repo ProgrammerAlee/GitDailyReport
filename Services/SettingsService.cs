@@ -15,6 +15,8 @@ public class SettingsService : ISettingsService
 
     private static readonly string SettingsFile = System.IO.Path.Combine(SettingsDir, "settings.json");
 
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
     /// <inheritdoc />
     public string GetSettingsFilePath() => SettingsFile;
 
@@ -41,8 +43,10 @@ public class SettingsService : ISettingsService
     public void SaveSettings(AppSettings settings)
     {
         System.IO.Directory.CreateDirectory(SettingsDir);
-        var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-        System.IO.File.WriteAllText(SettingsFile, json);
+        var json = JsonSerializer.Serialize(settings, JsonOptions);
+        var tempFile = SettingsFile + ".tmp";
+        System.IO.File.WriteAllText(tempFile, json);
+        System.IO.File.Move(tempFile, SettingsFile, overwrite: true);
     }
 
     /// <inheritdoc />

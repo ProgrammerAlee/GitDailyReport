@@ -1,3 +1,5 @@
+using GitDailyReport.Models;
+
 namespace GitDailyReport.Services;
 
 /// <summary>
@@ -12,7 +14,7 @@ public interface IDeepseekService
     /// <param name="apiKey">API Key</param>
     /// <param name="progress">流式输出进度（累计文本）</param>
     /// <param name="ct">取消令牌</param>
-    Task<string> GenerateDailyReportWithPromptAsync(
+    Task<ReportGenerationResult> GenerateDailyReportWithPromptAsync(
         string fullPrompt,
         string apiKey,
         IProgress<string>? progress = null,

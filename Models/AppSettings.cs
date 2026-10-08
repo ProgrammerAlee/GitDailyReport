@@ -26,6 +26,9 @@ public class AppSettings
     /// <summary>上次选中的作者邮箱列表（用于恢复筛选状态）</summary>
     public List<string> SelectedAuthorEmails { get; set; } = [];
 
+    /// <summary>是否已经保存过提交人勾选。用来区分「还没选过」和「故意一个都不选」。</summary>
+    public bool AuthorSelectionSaved { get; set; }
+
     /// <summary>是否查询所有分支</summary>
     public bool IncludeAllBranches { get; set; }
 
@@ -34,4 +37,10 @@ public class AppSettings
 
     /// <summary>是否按作者日期筛选（更贴近「哪天写的代码」）</summary>
     public bool UseAuthorDate { get; set; } = true;
+
+    /// <summary>视为“我”的作者邮箱。同一人的多个邮箱都放在这里。</summary>
+    public List<string> MyAuthorEmails { get; set; } = [];
+
+    /// <summary>是否已经尝试过从 Git 配置识别邮箱。避免用户清空后下次启动又写回去。</summary>
+    public bool IdentityInitialized { get; set; }
 }

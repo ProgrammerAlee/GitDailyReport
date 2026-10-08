@@ -26,6 +26,13 @@ public partial class MainWindow : Window
             await vm.InitializeAsync();
     }
 
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+            vm.FlushSettings();
+        base.OnClosing(e);
+    }
+
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.OldValue is MainViewModel oldVm)
